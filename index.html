@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Maqueta ML - MVP</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Optimización de decisiones laborales (MVP)</h1>
+    <p class="subtitle">Sistema demostrativo basado en Machine Learning supervisado — UNAD</p>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>Agregar dato (RRHH / Operaciones / Finanzas)</h2>
+      <div class="form-row">
+        <select id="area">
+          <option value="rrhh">Recursos Humanos</option>
+          <option value="ops">Operaciones</option>
+          <option value="fin">Finanzas</option>
+        </select>
+        <input id="metric" placeholder="Métrica (ej: ausentismo, tiempo, costo)">
+        <input id="value" type="number" placeholder="Valor numérico">
+        <button id="addBtn">Agregar</button>
+      </div>
+      <div class="hint">Los datos se almacenan en localStorage. Puedes añadir varios registros y luego ejecutar el modelo.</div>
+    </section>
+
+    <section class="card">
+      <h2>Reglas de negocio (condiciones simples)</h2>
+      <div class="form-row">
+        <input id="ruleName" placeholder="Nombre regla (ej: umbral_ausentismo)">
+        <input id="ruleExpr" placeholder="Expresión simple (ej: expected < 50)">
+        <button id="addRuleBtn">Agregar regla</button>
+      </div>
+      <ul id="rulesList" class="list"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Simulación del modelo</h2>
+      <div class="form-row">
+        <button id="runModel">Ejecutar modelo</button>
+        <button id="retrain">Reentrenar (retroalimentación)</button>
+        <button id="clearData">Borrar datos</button>
+      </div>
+      <div class="outputs">
+        <div>
+          <h3>Indicadores y alertas</h3>
+          <div id="alerts" class="alerts"></div>
+        </div>
+        <div>
+          <h3>Validación humana</h3>
+          <label><input type="checkbox" id="validated"> Marcado como validado</label><br>
+          <input id="validatorName" placeholder="Nombre validador">
+        </div>
+      </div>
+    </section>
+
+    <section class="card fullwidth">
+      <h2>Escenarios (Gráfica)</h2>
+      <canvas id="scenarioChart"></canvas>
+    </section>
+
+    <section class="card">
+      <h2>Datos ingresados (preview)</h2>
+      <table id="dataTable" class="table">
+        <thead><tr><th>Área</th><th>Métrica</th><th>Valor</th><th>TS</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+  </main>
+
+  <footer>
+    <small>Proyecto de maqueta - MVP. Guardado en localStorage. Autor: Johan Matteo Rendon Reyes</small>
+  </footer>
+
+<script src="storage.js"></script>
+<script src="model.js"></script>
+<script src="charts.js"></script>
+<script>
+(function(){
+  // UI bindings
+  const addBtn = document.getElementById('addBtn');
+  const runModelBtn = document.getElementById('runModel');
+  const retrainBtn = document.getElementById('retrain');
+  const clearBtn = document.getElementById('clearData');
+  const dataTableBody = document.querySelector('#dataTable tbody');
+  const alertsDiv = document.getElementById('alerts');
+
+  function refreshTable(){
+    const arr = Storage.getAll();
+    dataTableBody.innerHTML = '';
+    arr.forEach(r=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${r.area}</td><td>${r.metric}</td><td>${r.value}</td><td>${new Date(r.ts).toLocaleString()}</td>`;
+      dataTableBody.appendChild(tr);
+    });
+  }
+
+  function refreshRules(){
+    const list = document.getElementById('rulesList');
+    list.innerHTML = '';
+    Storage.getRules().forEach((rule, idx)=>{
+      const li = document.createElement('li');
+      li.textContent = `${rule.name} — ${rule.expr}`;
+      const del = document.createElement('button');
+      del.textContent = 'Eliminar';
+      del.onclick = ()=>{ Storage.deleteRule(idx); refreshRules(); };
+      li.appendChild(del);
+      list.appendChild(li);
+    });
+  }
+
+  addBtn.onclick = ()=>{
+    const area = document.getElementById('area').value;
+    const metric = document.getElementById('metric').value.trim();
+    const value = parseFloat(document.getElementById('value').value);
+    if(!metric || isNaN(value)) return alert('Completa la métrica y valor numérico');
+    Storage.addEntry({ area, metric, value, ts: Date.now() });
+    refreshTable();
+  };
+
+  document.getElementById('addRuleBtn').onclick = ()=>{
+    const name = document.getElementById('ruleName').value.trim();
+    const expr = document.getElementById('ruleExpr').value.trim();
+    if(!name || !expr) return alert('Completa nombre y expresión');
+    Storage.addRule({ name, expr });
+    document.getElementById('ruleName').value=''; document.getElementById('ruleExpr').value='';
+    refreshRules();
+  };
+
+  runModelBtn.onclick = ()=>{
+    const data = Storage.getAll();
+    const sim = Model.simulate(data);
+    ChartModule.renderScenarioChart(sim);
+    const alerts = Model.evaluateRules(sim, Storage.getRules());
+    alertsDiv.innerHTML = alerts.map(a=>`<div class="alert">${a}</div>`).join('') || '<div class="muted">Sin alertas</div>';
+  };
+
+  retrainBtn.onclick = ()=>{
+    const data = Storage.getAll();
+    const sim = Model.simulate(data, { retrain:true });
+    ChartModule.renderScenarioChart(sim);
+    alert('Proceso de reentrenamiento simulado completado.');
+  };
+
+  clearBtn.onclick = ()=>{
+    if(confirm('Borrar todos los datos y reglas?')){
+      Storage.clearAll();
+      refreshTable(); refreshRules();
+      alertsDiv.innerHTML = '';
+      if(ChartModule.chart) ChartModule.chart.destroy();
+    }
+  };
+
+  // initial render
+  refreshTable();
+  refreshRules();
+})();
+</script>
+</body>
+</html>
