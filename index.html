@@ -14,6 +14,10 @@
   </header>
 
   <main class="container">
+
+    <!-- ==========================
+      SECCIÓN: INGRESO DE DATOS
+    ============================ -->
     <section class="card">
       <h2>Agregar dato (RRHH / Operaciones / Finanzas)</h2>
       <div class="form-row">
@@ -22,23 +26,28 @@
           <option value="ops">Operaciones</option>
           <option value="fin">Finanzas</option>
         </select>
-        <input id="metric" placeholder="Métrica (ej: ausentismo, tiempo, costo)">
+        <input id="metric" placeholder="Métrica (ej: ausentismo)">
         <input id="value" type="number" placeholder="Valor numérico">
         <button id="addBtn">Agregar</button>
       </div>
-      <div class="hint">Los datos se almacenan en localStorage. Puedes añadir varios registros y luego ejecutar el modelo.</div>
     </section>
 
+    <!-- ==========================
+      SECCIÓN: UMBRAL SEMÁFORO
+    ============================ -->
     <section class="card">
-      <h2>Reglas de negocio (condiciones simples)</h2>
+      <h2>Regla de interpretación (Semáforo)</h2>
+      <p>Define un umbral para clasificar el escenario esperado:</p>
       <div class="form-row">
-        <input id="ruleName" placeholder="Nombre regla (ej: umbral_ausentismo)">
-        <input id="ruleExpr" placeholder="Expresión simple (ej: expected < 50)">
-        <button id="addRuleBtn">Agregar regla</button>
+          <input id="threshold" type="number" placeholder="Umbral (por ejemplo: 50)">
+          <button id="saveThreshold">Guardar umbral</button>
       </div>
-      <ul id="rulesList" class="list"></ul>
+      <div id="currentThreshold" class="muted">Sin umbral establecido</div>
     </section>
 
+    <!-- ==========================
+      SECCIÓN: EJECUCIÓN DEL MODELO
+    ============================ -->
     <section class="card">
       <h2>Simulación del modelo</h2>
       <div class="form-row">
@@ -46,26 +55,22 @@
         <button id="retrain">Reentrenar (retroalimentación)</button>
         <button id="clearData">Borrar datos</button>
       </div>
-      <div class="outputs">
-        <div>
-          <h3>Indicadores y alertas</h3>
-          <div id="alerts" class="alerts"></div>
-        </div>
-        <div>
-          <h3>Validación humana</h3>
-          <label><input type="checkbox" id="validated"> Marcado como validado</label><br>
-          <input id="validatorName" placeholder="Nombre validador">
-        </div>
-      </div>
+      <div id="alerts" class="alerts"></div>
     </section>
 
+    <!-- ==========================
+      SECCIÓN: GRÁFICA
+    ============================ -->
     <section class="card fullwidth">
       <h2>Escenarios (Gráfica)</h2>
       <canvas id="scenarioChart"></canvas>
     </section>
 
+    <!-- ==========================
+      TABLA DE DATOS
+    ============================ -->
     <section class="card">
-      <h2>Datos ingresados (preview)</h2>
+      <h2>Datos ingresados</h2>
       <table id="dataTable" class="table">
         <thead><tr><th>Área</th><th>Métrica</th><th>Valor</th><th>TS</th></tr></thead>
         <tbody></tbody>
@@ -75,22 +80,22 @@
   </main>
 
   <footer>
-    <small>Proyecto de maqueta - MVP. Guardado en localStorage. Autor: Johan Matteo Rendon Reyes</small>
+    <small>Proyecto MVP — Machine Learning Supervisado</small>
   </footer>
 
 <script src="storage.js"></script>
 <script src="model.js"></script>
 <script src="charts.js"></script>
+
 <script>
 (function(){
-  // UI bindings
-  const addBtn = document.getElementById('addBtn');
-  const runModelBtn = document.getElementById('runModel');
-  const retrainBtn = document.getElementById('retrain');
-  const clearBtn = document.getElementById('clearData');
+  // Referencias
   const dataTableBody = document.querySelector('#dataTable tbody');
   const alertsDiv = document.getElementById('alerts');
 
+  // ==========================
+  // TABLA
+  // ==========================
   function refreshTable(){
     const arr = Storage.getAll();
     dataTableBody.innerHTML = '';
@@ -101,66 +106,74 @@
     });
   }
 
-  function refreshRules(){
-    const list = document.getElementById('rulesList');
-    list.innerHTML = '';
-    Storage.getRules().forEach((rule, idx)=>{
-      const li = document.createElement('li');
-      li.textContent = `${rule.name} — ${rule.expr}`;
-      const del = document.createElement('button');
-      del.textContent = 'Eliminar';
-      del.onclick = ()=>{ Storage.deleteRule(idx); refreshRules(); };
-      li.appendChild(del);
-      list.appendChild(li);
-    });
+  // ==========================
+  // SECCIÓN MODELO
+  // ==========================
+  function runModel(){
+    const data = Storage.getAll();
+    const sim = Model.simulate(data);
+    ChartModule.renderScenarioChart(sim);
+
+    // clasificación semáforo
+    const expectedFinal = sim.expected[sim.expected.length - 1];
+    const threshold = Storage.getThreshold();
+    const cls = ModelColor.classify(expectedFinal, threshold);
+
+    alertsDiv.innerHTML = `<div class="alert ${cls.color}">${cls.msg}</div>`;
   }
 
-  addBtn.onclick = ()=>{
+  // ==========================
+  // EVENTOS
+  // ==========================
+  document.getElementById('addBtn').onclick = ()=>{
     const area = document.getElementById('area').value;
     const metric = document.getElementById('metric').value.trim();
     const value = parseFloat(document.getElementById('value').value);
-    if(!metric || isNaN(value)) return alert('Completa la métrica y valor numérico');
+    if(!metric || isNaN(value)) return alert('Completa métrica y valor');
     Storage.addEntry({ area, metric, value, ts: Date.now() });
     refreshTable();
   };
 
-  document.getElementById('addRuleBtn').onclick = ()=>{
-    const name = document.getElementById('ruleName').value.trim();
-    const expr = document.getElementById('ruleExpr').value.trim();
-    if(!name || !expr) return alert('Completa nombre y expresión');
-    Storage.addRule({ name, expr });
-    document.getElementById('ruleName').value=''; document.getElementById('ruleExpr').value='';
-    refreshRules();
-  };
+  document.getElementById('runModel').onclick = runModel;
 
-  runModelBtn.onclick = ()=>{
-    const data = Storage.getAll();
-    const sim = Model.simulate(data);
-    ChartModule.renderScenarioChart(sim);
-    const alerts = Model.evaluateRules(sim, Storage.getRules());
-    alertsDiv.innerHTML = alerts.map(a=>`<div class="alert">${a}</div>`).join('') || '<div class="muted">Sin alertas</div>';
-  };
-
-  retrainBtn.onclick = ()=>{
-    const data = Storage.getAll();
-    const sim = Model.simulate(data, { retrain:true });
-    ChartModule.renderScenarioChart(sim);
-    alert('Proceso de reentrenamiento simulado completado.');
-  };
-
-  clearBtn.onclick = ()=>{
-    if(confirm('Borrar todos los datos y reglas?')){
+  document.getElementById('clearData').onclick = ()=>{
+    if(confirm("¿Borrar todo?")){
       Storage.clearAll();
-      refreshTable(); refreshRules();
+      refreshTable();
       alertsDiv.innerHTML = '';
       if(ChartModule.chart) ChartModule.chart.destroy();
+      refreshThreshold();
     }
   };
 
-  // initial render
+  document.getElementById('retrain').onclick = ()=>{
+    alert("Reentrenamiento simulado completado.");
+    runModel();
+  };
+
+  // ==========================
+  // UMBRAL
+  // ==========================
+  const saveThresholdBtn = document.getElementById('saveThreshold');
+  const thresholdInput = document.getElementById('threshold');
+  const currentThDiv = document.getElementById('currentThreshold');
+
+  function refreshThreshold(){
+    const th = Storage.getThreshold();
+    currentThDiv.textContent = th !== null ? `Umbral actual: ${th}` : "Sin umbral establecido";
+  }
+
+  saveThresholdBtn.onclick = ()=>{
+    const value = parseFloat(thresholdInput.value);
+    if(isNaN(value)) return alert("Ingresa un número válido");
+    Storage.setThreshold(value);
+    refreshThreshold();
+  };
+
+  refreshThreshold();
   refreshTable();
-  refreshRules();
 })();
 </script>
+
 </body>
 </html>
